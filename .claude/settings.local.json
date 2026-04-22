@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "WebFetch(domain:a2a-protocol.org)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(python -m pip install a2a-sdk)",
+      "Bash(python -m ensurepip --upgrade)",
+      "Bash(python -m pip install --quiet a2a-sdk)",
+      "Bash(python -c \"import a2a; print\\('a2a-sdk:', a2a.__version__ if hasattr\\(a2a, '__version__'\\) else '?'\\)\")",
+      "Bash(python -m pip show a2a-sdk)"
+    ]
+  }
+}

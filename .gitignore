@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.env.local
+*.egg-info/
+.vscode/
+.idea/
+keycloak-data/
