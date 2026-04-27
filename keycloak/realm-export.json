@@ -2,11 +2,18 @@
   "realm": "a2a-demo",
   "enabled": true,
   "accessTokenLifespan": 300,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": false,
   "roles": {
     "realm": [
-      { "name": "weather.read" },
-      { "name": "billing.read" },
-      { "name": "billing.write" }
+      { "name": "weather.read", "description": "Allowed to call the weather agent" },
+      { "name": "billing.read",  "description": "Allowed to read billing data" },
+      { "name": "billing.write", "description": "Allowed to mutate billing data" }
     ]
   },
   "users": [
@@ -31,74 +38,166 @@
       "realmRoles": ["weather.read", "billing.read", "billing.write"]
     }
   ],
-  "clients": [
+  "clientScopes": [
     {
-      "clientId": "a2a-ui",
-      "publicClient": true,
-      "standardFlowEnabled": true,
-      "redirectUris": ["http://localhost:3000/*"],
-      "webOrigins": ["http://localhost:3000"],
+      "name": "aud-orchestrator",
+      "protocol": "openid-connect",
+      "description": "Adds aud=orchestrator to user tokens. Required so the orchestrator can exchange the user's token (Standard token exchange requires the caller to be in the subject token's aud).",
       "attributes": {
-        "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:3000/*"
-      }
-    },
-    {
-      "clientId": "orchestrator",
-      "publicClient": false,
-      "secret": "CHANGE_ME_orchestrator",
-      "serviceAccountsEnabled": true,
-      "standardFlowEnabled": false,
-      "directAccessGrantsEnabled": false,
-      "attributes": {
-        "standard.token.exchange.enabled": "true"
-      }
-    },
-    {
-      "clientId": "weather-agent",
-      "publicClient": false,
-      "secret": "CHANGE_ME_weather",
-      "serviceAccountsEnabled": true,
-      "standardFlowEnabled": false,
-      "directAccessGrantsEnabled": false,
-      "attributes": {
-        "standard.token.exchange.enabled": "true"
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
       },
       "protocolMappers": [
         {
-          "name": "aud-self",
+          "name": "aud-orchestrator",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "orchestrator",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "aud-weather",
+      "protocol": "openid-connect",
+      "description": "Adds aud=weather-agent to access tokens of callers that need to reach the weather agent.",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "aud-weather",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
           "config": {
             "included.client.audience": "weather-agent",
             "access.token.claim": "true",
-            "id.token.claim": "false"
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
           }
         }
+      ]
+    },
+    {
+      "name": "aud-billing",
+      "protocol": "openid-connect",
+      "description": "Adds aud=billing-agent to access tokens of callers that need to reach the billing agent.",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "aud-billing",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "billing-agent",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "a2a-ui",
+      "name": "A2A Demo UI",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:3000/*"],
+      "webOrigins": ["http://localhost:3000", "+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3000/*"
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "basic",
+        "email",
+        "aud-orchestrator"
+      ]
+    },
+    {
+      "clientId": "orchestrator",
+      "name": "A2A Orchestrator",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "orchestrator-demo-secret-9f2x4a8b",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "attributes": {
+        "standard.token.exchange.enabled": "true",
+        "client.secret.creation.time": "1714128000"
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "basic",
+        "email",
+        "aud-weather",
+        "aud-billing"
+      ]
+    },
+    {
+      "clientId": "weather-agent",
+      "name": "Weather A2A Agent",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "weather-demo-secret-3k7m1q5z",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "attributes": {
+        "standard.token.exchange.enabled": "true",
+        "client.secret.creation.time": "1714128000"
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "basic",
+        "email",
+        "aud-billing"
       ]
     },
     {
       "clientId": "billing-agent",
+      "name": "Billing A2A Agent",
+      "enabled": true,
       "publicClient": false,
-      "secret": "CHANGE_ME_billing",
+      "secret": "billing-demo-secret-6p4n8w2c",
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
       "attributes": {
-        "standard.token.exchange.enabled": "true"
-      },
-      "protocolMappers": [
-        {
-          "name": "aud-self",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "config": {
-            "included.client.audience": "billing-agent",
-            "access.token.claim": "true",
-            "id.token.claim": "false"
-          }
-        }
-      ]
+        "standard.token.exchange.enabled": "true",
+        "client.secret.creation.time": "1714128000"
+      }
     }
   ]
 }

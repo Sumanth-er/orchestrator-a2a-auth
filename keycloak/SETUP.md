@@ -14,6 +14,20 @@ Wait ~30 s, then open **http://localhost:8080** → **Administration Console**. 
 
 ---
 
+## Quick path — import realm-export.json
+
+If you just want a working demo and trust the bundled secrets, skip §1–§8 entirely:
+
+1. After step 0 above, in the top-left realm dropdown click **Create realm**.
+2. **Resource file** → upload **`keycloak/realm-export.json`** → **Create**.
+3. Done. Everything below (clients, scopes, roles, users, secrets) is preconfigured exactly as §1–§8 describe.
+
+The bundled client secrets in `realm-export.json` already match the values in `.env.example`, so `cp .env.example .env` plus your Azure OpenAI key is the only env work needed. Skip ahead to **§9 Smoke test**.
+
+If you'd rather click through everything by hand to learn how it fits together, do §1–§8 below instead.
+
+---
+
 ## 1. Create the realm
 
 1. Top-left dropdown (shows **Keycloak master**) → **Create realm**.
@@ -35,7 +49,8 @@ Sidebar → **Clients** → **Create client**.
 **Capability config:**
 - Client authentication: **OFF** (public client)
 - Authorization: **OFF**
-- Authentication flow: check only **Standard flow** (nothing else)
+- Authentication flow: check **Standard flow** AND **Direct access grants**
+  *(Direct access grants is needed only so we can curl-test password flow in §9. The real UI uses PKCE — you can disable it again after testing.)*
 - → **Next**
 
 **Login settings:**
@@ -80,37 +95,51 @@ Sidebar → **Clients** → **Create client**.
 
 ---
 
-## 4. Audience mappers (so agent tokens carry `aud`)
+## 4. Audience scopes — the chain
 
-For each agent client (`weather-agent`, `billing-agent`):
+> **The Standard Token Exchange rule (RFC 8693 in Keycloak 25/26):**
+> a client may exchange a subject token only if **the calling client is in the subject token's `aud` claim**. There are no fine-grained admin permissions to grant — the audience claim *is* the authorisation. So the audience chain must be:
+>
+> `user-token (aud=orchestrator) → exchanged (aud=weather-agent) → exchanged (aud=billing-agent) …`
+>
+> This means we need **three** audience scopes — one per "next hop" — assigned to whoever needs to make that hop.
 
-1. Clients → click the agent client → **Client scopes** tab.
-2. Click the row that ends in `-dedicated` (e.g. `weather-agent-dedicated`).
-3. Tab **Mappers** → **Add mapper** → **By configuration** → **Audience**.
-4. Fill:
-   - Name: `aud-self`
-   - Included Client Audience: *(the client itself — e.g. `weather-agent`)*
+### 4a. Create three shared client scopes
+
+For each name in `aud-orchestrator`, `aud-weather`, `aud-billing`:
+
+1. Sidebar → **Client scopes** → **Create client scope**:
+   - Name: *(one of the three)*
+   - Type: `None`
+   - Protocol: `openid-connect`
+   - → **Save**
+2. Open the new scope → **Mappers** tab → **Add mapper** → **By configuration** → **Audience**:
+   - Name: same as the scope (e.g. `aud-weather`)
+   - Included Client Audience: the corresponding client (`orchestrator` / `weather-agent` / `billing-agent`)
    - Add to access token: **ON**
-5. → **Save**.
+   - Add to ID token: OFF
+   - → **Save**
 
-This ensures tokens exchanged *for* this agent include `aud: weather-agent` (or `billing-agent`), which the agent middleware verifies.
+### 4b. Assign each scope to the clients that need it
+
+| Client          | Default scope to add | Why                                                        |
+|-----------------|----------------------|------------------------------------------------------------|
+| `a2a-ui`        | `aud-orchestrator`   | User tokens must include orchestrator so it can exchange.  |
+| `orchestrator`  | `aud-weather`, `aud-billing` | So exchanged tokens carry the right agent audience.|
+| `weather-agent` | `aud-billing`        | Lets weather call billing in the agent-to-agent demo.      |
+| `billing-agent` | *(none)*             | Leaf — never exchanges further.                            |
+
+For each row: Clients → *client* → **Client scopes** tab → **Add client scope** → tick → **Add → Default**.
+
+After this, the chain works end to end: alice's UI token already lists orchestrator as audience, the exchange to weather succeeds because orchestrator is allowed, and so on down.
 
 ---
 
-## 5. Token-exchange permissions (who may exchange to whom)
+## 5. (Skipped — fine-grained permissions are not used)
 
-For **each target agent client** (`weather-agent`, `billing-agent`):
+Earlier Keycloak versions required granting `token-exchange` permission on each target client via the **Permissions** tab. **Standard Token Exchange does not use that mechanism.** As long as §4 is set up correctly, no permission grants are needed. The only authorisation rule is "calling client must be in the subject token's `aud`" (which §4 ensures).
 
-1. Clients → click the agent client → **Permissions** tab.
-2. Set **Permissions enabled** to **ON** (creates a hidden `realm-management` authorization).
-3. Click the **token-exchange** permission row.
-4. In **Policies**, click **Create policy** → **Client policy**:
-   - Name: `orchestrator-can-exchange` (or `weather-can-exchange` when granting weather → billing)
-   - Clients: select `orchestrator` (add `weather-agent` too on the billing permission, so weather may call billing)
-   - → **Save**
-5. Back on the permission, add the new policy to the **Policies** field → **Save**.
-
-Result: only clients you list here can swap a token *for* this agent's audience. Anyone else gets `403` from Keycloak at exchange time.
+If you accidentally enabled fine-grained permissions on any client during setup, it's harmless — just leaves an unused authorisation resource around.
 
 ---
 
@@ -151,7 +180,9 @@ Sidebar → **Realm settings** → **Tokens** tab:
 
 ## 9. Smoke test
 
-Get a token as `alice` with the UI client:
+> Requires **Direct access grants** on `a2a-ui` (set in §2). Disable it after testing if you want strict PKCE-only.
+
+Get a user token as `alice`:
 
 ```bash
 curl -s -X POST "http://localhost:8080/realms/a2a-demo/protocol/openid-connect/token" \
@@ -159,10 +190,8 @@ curl -s -X POST "http://localhost:8080/realms/a2a-demo/protocol/openid-connect/t
   -d "client_id=a2a-ui" \
   -d "username=alice" \
   -d "password=demo" \
-  -d "scope=openid" | jq
+  -d "scope=openid" | jq -r .access_token
 ```
-
-(Password grant works here only because no secret is set on `a2a-ui`. In the actual UI we use PKCE.)
 
 Decode the `access_token` at https://jwt.io — you should see `realm_access.roles: ["weather.read", ...]`.
 
@@ -180,13 +209,17 @@ curl -s -X POST "http://localhost:8080/realms/a2a-demo/protocol/openid-connect/t
   -d "audience=weather-agent" | jq
 ```
 
-Decode the new token — `aud` should be `weather-agent`, `sub` still alice's user id.
+Decode the new token — `aud` should include `weather-agent`, `sub` still alice's user id.
 
 ---
 
 ## Troubleshooting
 
-- **`token-exchange-standard` toggle not visible** on Capability config → feature flag not enabled; recheck container command line.
-- **Exchange returns 403 `not_allowed`** → permission on target client missing (step 5).
-- **`aud` missing from exchanged token** → audience mapper missing on target client (step 4).
-- **After-restart login broken** → delete `./keycloak-data` volume and redo this guide, or import `realm-export.json`.
+- **`token-exchange-standard` toggle not visible** on Capability config → feature flag not enabled; recheck container command line in `docker-compose.yml`.
+- **`invalid_grant: unsupported_grant_type`** at the password endpoint → Direct access grants is OFF on `a2a-ui` (turn it on in Capability config).
+- **`invalid_client: Client is not the audience of the subject_token`** during token exchange → the user token doesn't include the caller in its `aud`. Add `aud-orchestrator` (or `aud-<caller>`) as a Default client scope on the issuer of the subject token. See §4 — this is the most common mistake.
+- **`invalid_request: client audience not available`** during exchange → the `aud-<target>` scope is missing or not assigned to the caller as Default. Re-check §4b.
+- **`aud` claim missing from exchanged token** → audience mapper inside the scope doesn't have "Add to access token" enabled (§4 step 2).
+- **Agent returns 401 "Token audience mismatch"** → exchanged token doesn't contain the agent's client id. Either §4 mapper config is wrong, or the scope is **Optional** instead of **Default**.
+- **Agent returns 403 "lacks required role"** → the user is missing the realm role the agent requires (§6/§7). Working as designed.
+- **After-restart login broken** → delete `./keycloak-data` volume and re-import `realm-export.json`.

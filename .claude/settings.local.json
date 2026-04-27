@@ -9,7 +9,12 @@
       "Bash(python -m ensurepip --upgrade)",
       "Bash(python -m pip install --quiet a2a-sdk)",
       "Bash(python -c \"import a2a; print\\('a2a-sdk:', a2a.__version__ if hasattr\\(a2a, '__version__'\\) else '?'\\)\")",
-      "Bash(python -m pip show a2a-sdk)"
+      "Bash(python -m pip show a2a-sdk)",
+      "WebFetch(domain:www.keycloak.org)",
+      "Bash(gh pr *)",
+      "Bash(where gh *)",
+      "Bash(gh --version)",
+      "Bash(\"C:/Program Files/GitHub CLI/gh.exe\" --version)"
     ]
   }
 }
