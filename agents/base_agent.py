@@ -6,16 +6,19 @@ Every agent in this demo is three files:
     agents/<name>/executor.py   - AgentExecutor implementing the skill
     agents/<name>/main.py       - calls make_agent_app(...) and uvicorn.run
 
-`make_agent_app` stitches the A2A SDK (A2AStarletteApplication +
-DefaultRequestHandler + InMemoryTaskStore) to our KeycloakAuthMiddleware.
+`make_agent_app` stitches the a2a-sdk 1.0.0 server bits
+(`create_agent_card_routes` + `create_jsonrpc_routes` +
+`DefaultRequestHandler` + `InMemoryTaskStore`) onto a Starlette app and
+adds our `KeycloakAuthMiddleware`.
+
 No agent needs to know anything about auth beyond declaring its own
 audience + required_roles.
 """
 from __future__ import annotations
 
 from a2a.server.agent_execution import AgentExecutor
-from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCard
 from starlette.applications import Starlette
@@ -38,8 +41,15 @@ def make_agent_app(
     handler = DefaultRequestHandler(
         agent_executor=executor,
         task_store=InMemoryTaskStore(),
+        agent_card=card,
     )
-    app = A2AStarletteApplication(agent_card=card, http_handler=handler).build()
+
+    routes = [
+        *create_agent_card_routes(card),
+        *create_jsonrpc_routes(handler, rpc_url="/"),
+    ]
+
+    app = Starlette(routes=routes)
     app.add_middleware(
         KeycloakAuthMiddleware,
         validator=validator,

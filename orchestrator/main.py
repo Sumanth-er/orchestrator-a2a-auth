@@ -110,7 +110,9 @@ async def chat(request: Request):
         raise HTTPException(400, "message is required")
 
     token, claims = _authenticate(request)
-    username = claims.get("preferred_username", "user")
+    # preferred_username comes from the `profile` scope; fall back to sub if missing
+    # so the UI never displays a fake-looking literal "user".
+    username = claims.get("preferred_username") or claims.get("sub", "")[:8] or "anonymous"
 
     dispatcher: Dispatcher = request.app.state.dispatcher
 

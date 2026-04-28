@@ -23,7 +23,7 @@ demo-a2a/
 └── orchestrator/
     ├── main.py               # FastAPI + SSE /chat
     ├── registry.py           # <-- the only place to register a new agent
-    ├── router_llm.py         # Azure OpenAI picks which agent + composes reply
+    ├── router_llm.py         # Ollama (langchain-ollama) picks agent + composes reply
     ├── a2a_dispatcher.py     # uses a2a-sdk ClientFactory + bearer httpx hook
     └── static/               # vanilla JS chat UI with oidc-client-ts
 ```
@@ -32,7 +32,12 @@ demo-a2a/
 
 - Python 3.11+
 - Docker (for Keycloak)
-- An Azure OpenAI deployment (endpoint, key, deployment name)
+- [Ollama](https://ollama.com) running locally:
+  ```bash
+  ollama serve              # in one terminal (or it auto-starts on macOS/Win)
+  ollama pull llama3.1      # any chat model that supports format=json
+  ```
+  The orchestrator talks to it via `OLLAMA_BASE_URL` (default `http://localhost:11434`) and `OLLAMA_MODEL` (default `llama3.1`) — both configurable in `.env`.
 
 ## Setup
 

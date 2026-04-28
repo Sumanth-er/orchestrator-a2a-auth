@@ -199,7 +199,9 @@ async function parseSse(stream, onEvent) {
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
-    buf += dec.decode(value, { stream: true });
+    // Normalize CRLF/CR -> LF so frame splitting on "\n\n" works regardless
+    // of what the server emits (sse-starlette uses CRLF).
+    buf += dec.decode(value, { stream: true }).replace(/\r\n?/g, "\n");
     let idx;
     while ((idx = buf.indexOf("\n\n")) !== -1) {
       const frame = buf.slice(0, idx);

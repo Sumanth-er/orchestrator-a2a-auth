@@ -14,7 +14,11 @@
       "Bash(gh pr *)",
       "Bash(where gh *)",
       "Bash(gh --version)",
-      "Bash(\"C:/Program Files/GitHub CLI/gh.exe\" --version)"
+      "Bash(\"C:/Program Files/GitHub CLI/gh.exe\" --version)",
+      "Bash(python -c \"import a2a; print\\(a2a.__file__\\); import a2a.server; print\\(dir\\(a2a.server\\)\\)\")",
+      "Bash(python -c \"import pkgutil, a2a; [print\\(m.name\\) for m in pkgutil.walk_packages\\(a2a.__path__, prefix='a2a.'\\)]\")",
+      "Bash(python -c \"from a2a.server.routes import agent_card_routes, jsonrpc_routes; print\\('agent_card_routes:', dir\\(agent_card_routes\\)\\); print\\('---'\\); print\\('jsonrpc_routes:', dir\\(jsonrpc_routes\\)\\)\")",
+      "Bash(python -c ' *)"
     ]
   }
 }
