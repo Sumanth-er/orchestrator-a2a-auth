@@ -1,3 +1,5 @@
+import shared.proto_compat  # noqa: F401  MUST be first — see module docstring
+
 import logging
 import os
 

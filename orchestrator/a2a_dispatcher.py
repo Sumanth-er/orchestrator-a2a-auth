@@ -66,33 +66,42 @@ class Dispatcher:
         try:
             output = await self._invoke(entry, exchanged, user_text)
             return self._done(entry, "ok", output=output, t0=t0)
-        except _A2AHttpError as e:
-            if e.status == 401:
-                return self._done(entry, "error",
-                                  reason="Token rejected by agent.",
-                                  error_code="UNAUTHORIZED", t0=t0)
-            if e.status == 403:
-                return self._done(entry, "denied",
-                                  reason=e.body.get("message") or f"No access to {entry.name}.",
-                                  error_code=e.body.get("code") or "ACCESS_DENIED", t0=t0)
-            return self._done(entry, "error",
-                              reason=f"Agent {entry.name} returned HTTP {e.status}.",
-                              error_code="AGENT_ERROR", t0=t0)
         except Exception as e:
+            # The a2a-sdk wraps httpx errors in its own exception classes, so we
+            # can't rely on `except httpx.HTTPStatusError` alone. Walk the cause
+            # chain looking for an httpx.Response we can inspect.
+            http_err = _find_http_status_error(e)
+            if http_err is not None:
+                return self._map_http_error(entry, http_err, t0)
             log.exception("dispatcher: unexpected error calling %s", entry.name)
             return self._done(entry, "error",
                               reason=f"Agent {entry.name} unreachable: {e}",
                               error_code="AGENT_UNREACHABLE", t0=t0)
 
+    def _map_http_error(self, entry, http_err, t0) -> "AgentCallResult":
+        status = http_err.status
+        body = http_err.body
+        if status == 401:
+            # 401 = bad token (signature/aud/exp). Surfacing as "denied" because
+            # from the user's POV, they can't reach this agent — the cause is
+            # almost always missing aud-<agent> scope on the orchestrator client.
+            return self._done(entry, "denied",
+                              reason=body.get("message") or "Token rejected by agent (audience or signature).",
+                              error_code=body.get("code") or "UNAUTHORIZED", t0=t0)
+        if status == 403:
+            return self._done(entry, "denied",
+                              reason=body.get("message") or f"No access to {entry.name}.",
+                              error_code=body.get("code") or "ACCESS_DENIED", t0=t0)
+        return self._done(entry, "error",
+                          reason=f"Agent {entry.name} returned HTTP {status}.",
+                          error_code="AGENT_ERROR", t0=t0)
+
     async def _invoke(self, entry: AgentEntry, token: str, text: str) -> str:
         from a2a.types.a2a_pb2 import Message, Part, Role, SendMessageRequest
 
         async with bearer_httpx_client(token) as http:
-            try:
-                resolver = A2ACardResolver(httpx_client=http, base_url=entry.url)
-                card = await resolver.get_agent_card()
-            except httpx.HTTPStatusError as e:
-                raise _A2AHttpError.from_response(e.response) from e
+            resolver = A2ACardResolver(httpx_client=http, base_url=entry.url)
+            card = await resolver.get_agent_card()
 
             factory = ClientFactory(ClientConfig(httpx_client=http, streaming=False))
             client = factory.create(card)
@@ -105,12 +114,9 @@ class Dispatcher:
                     )
                 )
                 collected: list[str] = []
-                try:
-                    async for chunk in client.send_message(request):
-                        task, _ = chunk
-                        collected.extend(_harvest_text(task))
-                except httpx.HTTPStatusError as e:
-                    raise _A2AHttpError.from_response(e.response) from e
+                async for chunk in client.send_message(request):
+                    task, _ = chunk
+                    collected.extend(_harvest_text(task))
                 return "\n".join(t for t in collected if t) or "(no content)"
             finally:
                 await client.close()
@@ -140,6 +146,42 @@ class _A2AHttpError(Exception):
         except Exception:
             body = {"message": r.text[:200]}
         return cls(r.status_code, body)
+
+
+def _find_http_status_error(exc: BaseException) -> _A2AHttpError | None:
+    """Walk the __cause__ / __context__ chain looking for HTTP status info.
+
+    a2a-sdk 1.0.0 wraps transport errors in its own exception classes, so a
+    real httpx.HTTPStatusError ends up several layers deep. We also look for
+    exceptions that carry a `.response` attribute (httpx-style) or
+    `.status_code` directly (some SDK errors).
+    """
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+
+        # Direct httpx error: has a .response with status_code
+        resp = getattr(cur, "response", None)
+        if resp is not None and hasattr(resp, "status_code"):
+            return _A2AHttpError.from_response(resp)
+
+        # SDK error that exposes status_code directly
+        status = getattr(cur, "status_code", None)
+        if isinstance(status, int) and status >= 400:
+            body = {"message": str(cur)[:200]}
+            return _A2AHttpError(status, body)
+
+        # Last resort: parse out a "403"/"401" from the message string. This
+        # catches the case where a2a-sdk re-raises with a stringified httpx
+        # error but loses the .response reference.
+        msg = str(cur)
+        for code in (401, 403):
+            if f"{code}" in msg and ("Forbidden" in msg or "Unauthorized" in msg or "Client error" in msg):
+                return _A2AHttpError(code, {"message": msg[:200]})
+
+        cur = cur.__cause__ or cur.__context__
+    return None
 
 
 def _harvest_text(task) -> list[str]:

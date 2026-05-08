@@ -3,6 +3,8 @@
 Adding a new agent = copy this folder, change card.py / executor.py,
 and point main.py at the right audience + role. That's it.
 """
+import shared.proto_compat  # noqa: F401  MUST be the first import — see module docstring
+
 import logging
 import os
 

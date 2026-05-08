@@ -3,8 +3,9 @@
 Responsibilities:
   - Serve the static chatbot UI.
   - Authenticate user token at /chat (Keycloak JWKS).
-  - Ask LLM to pick an agent.
-  - Token-exchange to the agent's audience, call via a2a-sdk, never raise.
+  - Run a create_agent runtime that picks 1..N specialist agents per turn
+    via the call_agent tool (see orchestrator/agent_runtime.py).
+  - Token-exchange to each agent's audience, call via a2a-sdk, never raise.
   - Stream per-agent chips + final reply back as SSE.
 
 NOTE: This does NOT enforce per-agent authorization. Agents do that.
@@ -12,6 +13,9 @@ The only check here is "is the token a valid Keycloak JWT from our realm".
 """
 from __future__ import annotations
 
+import shared.proto_compat  # noqa: F401  MUST be first — see module docstring
+
+import asyncio
 import json
 import logging
 import os
@@ -34,8 +38,8 @@ from shared.a2a_auth import (
 )
 from shared.a2a_auth.errors import AuthError, UnauthorizedError
 
-from orchestrator import router_llm
 from orchestrator.a2a_dispatcher import Dispatcher
+from orchestrator.agent_runtime import build_runtime, run as run_runtime
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("orchestrator")
@@ -116,34 +120,52 @@ async def chat(request: Request):
 
     dispatcher: Dispatcher = request.app.state.dispatcher
 
+    # Bus that the call_agent tool pushes SSE events into as it runs.
+    # Decouples tool execution (LangGraph node) from the SSE generator.
+    queue: asyncio.Queue[tuple[str, dict] | None] = asyncio.Queue()
+    chip_count = 0
+
+    async def event_sink(name: str, data: dict) -> None:
+        nonlocal chip_count
+        if name == "agent_selected":
+            chip_count += 1
+        await queue.put((name, data))
+
+    runtime = build_runtime(
+        dispatcher=dispatcher,
+        user_token=token,
+        event_sink=event_sink,
+    )
+
     async def stream():
         yield _sse("user_authenticated", {"username": username})
 
-        selection = await router_llm.pick_agent(user_message)
-        if selection.agent is None:
-            yield _sse("no_agent", {"rationale": selection.rationale})
-            reply = await router_llm.compose_reply(
-                user_message, None, "ok", None, None
-            )
-            yield _sse("reply", {"text": reply})
-            return
+        agent_task = asyncio.create_task(run_runtime(runtime, user_message))
 
-        entry = selection.agent
-        yield _sse("agent_selected", {
-            "agent": entry.name,
-            "rationale": selection.rationale,
-        })
+        # Fan tool-emitted events while the runtime executes; finish when
+        # the runtime is done AND the queue is drained.
+        while True:
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=0.1)
+                if item is None:
+                    break
+                name, data = item
+                yield _sse(name, data)
+            except asyncio.TimeoutError:
+                if agent_task.done() and queue.empty():
+                    break
 
-        result = await dispatcher.call(entry, user_token=token, user_text=user_message)
-        yield _sse("agent_result", result.to_event())
+        try:
+            reply = agent_task.result()
+        except Exception as e:                              # noqa: BLE001
+            log.exception("orchestrator: runtime failed")
+            reply = f"Sorry, something went wrong: {e}"
 
-        reply = await router_llm.compose_reply(
-            user_message=user_message,
-            agent_name=entry.name,
-            status=result.status,
-            agent_output=result.output,
-            reason=result.reason,
-        )
+        # Pure small-talk turns produce no chip; emit no_agent so the UI's
+        # chip row still renders something (matches legacy behaviour).
+        if chip_count == 0:
+            yield _sse("no_agent", {"rationale": "answered directly"})
+
         yield _sse("reply", {"text": reply})
 
     return EventSourceResponse(stream())

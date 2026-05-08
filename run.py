@@ -20,6 +20,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Force pure-Python protobuf so shared.proto_compat can monkey-patch
+# FieldDescriptor.label (gone in protobuf 5.x+, used by older a2a-sdk).
+# Subprocesses inherit this env var via os.environ.copy() in _spawn.
+os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
+
 # ANSI colors per service, cycling. Windows 10+ terminals support these.
 _COLORS = ["\033[36m", "\033[33m", "\033[35m", "\033[32m", "\033[34m"]
 _RESET = "\033[0m"

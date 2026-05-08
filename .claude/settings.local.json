@@ -18,7 +18,24 @@
       "Bash(python -c \"import a2a; print\\(a2a.__file__\\); import a2a.server; print\\(dir\\(a2a.server\\)\\)\")",
       "Bash(python -c \"import pkgutil, a2a; [print\\(m.name\\) for m in pkgutil.walk_packages\\(a2a.__path__, prefix='a2a.'\\)]\")",
       "Bash(python -c \"from a2a.server.routes import agent_card_routes, jsonrpc_routes; print\\('agent_card_routes:', dir\\(agent_card_routes\\)\\); print\\('---'\\); print\\('jsonrpc_routes:', dir\\(jsonrpc_routes\\)\\)\")",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(python -c \"from orchestrator.a2a_dispatcher import Dispatcher, _find_http_status_error, _A2AHttpError; import httpx; r = httpx.Response\\(403, json={'message':'no role','code':'ACCESS_DENIED'}\\); err = httpx.HTTPStatusError\\('boom', request=httpx.Request\\('POST','http://x'\\), response=r\\); wrapped = RuntimeError\\('wrapper'\\); wrapped.__cause__ = err; out = _find_http_status_error\\(wrapped\\); print\\('status:', out.status, 'body:', out.body\\)\")",
+      "Bash(python -c \"import google.protobuf; print\\('protobuf:', google.protobuf.__version__\\)\")",
+      "Bash(python -c \"import a2a; print\\('a2a-sdk dist:', __import__\\('importlib.metadata'\\).metadata.version\\('a2a-sdk'\\)\\)\")",
+      "Bash(pip install *)",
+      "Bash(set \"PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python\")",
+      "Bash(python -c \"import a2a.utils.proto_utils as p; print\\(p.__file__\\)\")",
+      "Bash('C:\\\\Users\\\\suman\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python311\\\\python.exe' -c ' *)",
+      "Bash(\"C:/Users/suman/Python_venvs/orchestrator-a2a-auth/.venv/Scripts/python.exe\" -c \"import importlib.metadata as m; print\\('a2a-sdk:', m.version\\('a2a-sdk'\\)\\); print\\('protobuf:', m.version\\('protobuf'\\)\\)\")",
+      "Read(//c/Users/suman/**)",
+      "Bash(dir \"C:\\\\Users\\\\suman\\\\Python_venvs\")",
+      "Bash(python -c \"import pptx; print\\(pptx.__version__\\)\")",
+      "Bash(where python *)",
+      "Bash(python -c \"import sys; print\\(sys.executable\\); print\\(sys.path\\)\")",
+      "Bash(C:/Users/suman/AppData/Local/Programs/Python/Python311/python.exe -c \"import pptx; print\\(pptx.__version__\\)\")",
+      "Bash(C:/Users/suman/AppData/Local/Programs/Python/Python311/python.exe C:/Users/suman/Desktop/demo-a2a/docs/build_ppt.py)",
+      "Bash(C:/Users/suman/AppData/Local/Programs/Python/Python311/python.exe -c ' *)",
+      "Bash(C:/Users/suman/AppData/Local/Programs/Python/Python311/python.exe -m pip install \"langchain-ollama>=0.2\")"
     ]
   }
 }
